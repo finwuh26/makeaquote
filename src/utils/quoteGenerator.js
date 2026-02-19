@@ -322,19 +322,34 @@ async function generateQuoteImage(opts) {
     ctx.fillText(subParts.join(' \u00B7 '), txLeft, authorY + 36);
   }
 
-  // ── 6. "Quoted by" — bottom-right corner ──────────────────────────────────
-  if (quotedBy) {
-    const label = `Quoted by ${quotedBy}`;
-    ctx.font        = `15px ${fontFamily}`;
-    ctx.fillStyle   = t.mutedColor;
-    ctx.textBaseline = 'bottom';
-    ctx.textAlign   = 'right';
-    ctx.fillText(label, TEXT_RIGHT, HEIGHT - 16);
-  }
+  // ── 6. Closing quotation mark ──────────────────────────────────────────────
+  ctx.save();
+  ctx.font        = `bold ${Math.min(Math.round(fontSize * 2.2), 110)}px ${fontFamily}`;
+  ctx.fillStyle   = `rgba(${accentRed},${accentGreen},${accentBlue},0.20)`;
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign   = 'right';
+  ctx.fillText('\u201D', Math.min(txLeft + txMaxW, TEXT_RIGHT), textStartY + textBlockH + fontSize * 0.5);
+  ctx.restore();
 
-  // ── 7. Thin accent line at very bottom of text area ───────────────────────
+  // ── 7. "Quoted by" + "✦ Make a Quote" branding — bottom strip ─────────────
+  // Full-width accent bar at the very bottom
   ctx.fillStyle = accent;
-  ctx.fillRect(txLeft, HEIGHT - 6, txMaxW, 3);
+  ctx.fillRect(0, HEIGHT - 4, WIDTH, 4);
+
+  // "✦ Make a Quote" on the left (subtle accent-tinted branding)
+  ctx.font        = `bold 13px ${fontFamily}`;
+  ctx.fillStyle   = `rgba(${accentRed},${accentGreen},${accentBlue},0.65)`;
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign   = 'left';
+  ctx.fillText('\u2736 Make a Quote', txLeft, HEIGHT - 11);
+
+  // "Quoted by X" on the right
+  if (quotedBy) {
+    ctx.font      = `13px ${fontFamily}`;
+    ctx.fillStyle = t.mutedColor;
+    ctx.textAlign = 'right';
+    ctx.fillText(`Quoted by ${quotedBy}`, TEXT_RIGHT, HEIGHT - 11);
+  }
 
   return canvas.toBuffer('image/png');
 }

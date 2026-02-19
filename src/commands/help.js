@@ -45,8 +45,8 @@ module.exports = {
           value: 'Reply to any message and @mention the bot to generate a quote from the replied message.',
         },
         {
-          name: '🎨 Interactive Buttons',
-          value: 'Every generated quote has **Theme**, **Font**, and **Layout** controls underneath it — click them to customise the quote on the fly without re-running a command.',
+          name: '🎨 Interactive Customisation',
+          value: 'Every generated quote has **Theme** and **Font** controls underneath it — click them to restyle the quote on the fly. Hit 💾 **Save Style** to make your current theme and font the default for all future quotes.',
         },
       )
       .setFooter({ text: 'Tip: use /settings user to save your favourite style so every quote looks great automatically.' });

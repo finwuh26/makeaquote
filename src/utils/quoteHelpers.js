@@ -98,14 +98,13 @@ const ACCENT_PRESETS = [
 // ─── Quote customisation component rows ───────────────────────────────────────
 
 /**
- * Build the three ActionRows that appear below every generated quote.
+ * Build the two ActionRows that appear below every generated quote.
  *
  * Row 1 – Theme select menu
- * Row 2 – Font buttons  (active theme = green, others = grey)
- * Row 3 – Layout toggles (enabled = green, disabled = red)
+ * Row 2 – Font buttons (active = green, others = grey) + 💾 Save Style button
  *
  * @param {string} sessionId
- * @param {{ theme, font, showAvatar, showTimestamp, showServer }} state
+ * @param {{ theme, font }} state
  * @returns {ActionRowBuilder[]}
  */
 function buildQuoteComponents(sessionId, state) {
@@ -122,7 +121,7 @@ function buildQuoteComponents(sessionId, state) {
       })),
     );
 
-  // Row 2 – font
+  // Row 2 – font buttons + save style
   const fontButtons = VALID_FONTS.map(f =>
     new ButtonBuilder()
       .setCustomId(`qt_font:${sessionId}:${f}`)
@@ -131,24 +130,15 @@ function buildQuoteComponents(sessionId, state) {
       .setEmoji(f === 'serif' ? '🖋️' : f === 'sans-serif' ? '🔤' : '💻'),
   );
 
-  // Row 3 – layout toggles
-  const toggleDefs = [
-    { id: 'av', label: 'Avatar',    emoji: '👤', field: 'showAvatar'    },
-    { id: 'ts', label: 'Timestamp', emoji: '🕐', field: 'showTimestamp' },
-    { id: 'sv', label: 'Server',    emoji: '🏠', field: 'showServer'    },
-  ];
-  const toggleButtons = toggleDefs.map(d =>
-    new ButtonBuilder()
-      .setCustomId(`qt_tog:${sessionId}:${d.id}`)
-      .setLabel(d.label)
-      .setStyle(state[d.field] ? ButtonStyle.Success : ButtonStyle.Danger)
-      .setEmoji(d.emoji),
-  );
+  const saveButton = new ButtonBuilder()
+    .setCustomId(`qt_save:${sessionId}`)
+    .setLabel('Save Style')
+    .setStyle(ButtonStyle.Primary)
+    .setEmoji('💾');
 
   return [
     new ActionRowBuilder().addComponents(themeSelect),
-    new ActionRowBuilder().addComponents(...fontButtons),
-    new ActionRowBuilder().addComponents(...toggleButtons),
+    new ActionRowBuilder().addComponents(...fontButtons, saveButton),
   ];
 }
 
