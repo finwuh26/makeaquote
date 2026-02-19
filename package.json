@@ -1,10 +1,12 @@
 {
   "name": "makeaquote",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Advanced Discord.js v14 Make a Quote bot — slash commands, context menu, interactive buttons, per-user/server settings dashboard, quote redirect channel",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js",
+    "deploy:guild": "node src/deploy-commands.js"
   },
   "repository": {
     "type": "git",

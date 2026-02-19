@@ -7,6 +7,14 @@ const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 /**
+ * In-memory write-through cache.
+ * Eliminates repeated synchronous disk reads on every settings lookup while
+ * keeping persistence: every write goes to disk immediately.
+ * @type {{ users: Object, guilds: Object } | null}
+ */
+let _cache = null;
+
+/**
  * Ensure the data directory and settings file exist.
  */
 function ensureStore() {
@@ -15,25 +23,31 @@ function ensureStore() {
 }
 
 /**
- * Load all settings from disk.
+ * Load all settings (from cache when available, otherwise from disk).
  * @returns {{ users: Object, guilds: Object }}
  */
 function load() {
+  if (_cache) return _cache;
   ensureStore();
   try {
-    return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    _cache = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
   } catch {
-    return { users: {}, guilds: {} };
+    _cache = { users: {}, guilds: {} };
   }
+  return _cache;
 }
 
 /**
- * Persist settings to disk.
+ * Persist settings to disk atomically (write to a temp file then rename) and
+ * update the in-memory cache.
  * @param {{ users: Object, guilds: Object }} data
  */
 function save(data) {
   ensureStore();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
+  _cache = data;
+  const tmp = SETTINGS_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, SETTINGS_FILE);
 }
 
 // ──────────────────────────────────────────────
@@ -47,6 +61,11 @@ const USER_DEFAULTS = {
   showTimestamp: true,
   showServer: true,
   font: 'serif',
+};
+
+/** Guild-only defaults (never merged into user settings). */
+const GUILD_ONLY_DEFAULTS = {
+  redirectChannelId: null,
 };
 
 /**
@@ -84,7 +103,7 @@ function setUserSettings(userId, patch) {
  */
 function getGuildSettings(guildId) {
   const store = load();
-  return { ...USER_DEFAULTS, ...(store.guilds[guildId] || {}) };
+  return { ...USER_DEFAULTS, ...GUILD_ONLY_DEFAULTS, ...(store.guilds[guildId] || {}) };
 }
 
 /**

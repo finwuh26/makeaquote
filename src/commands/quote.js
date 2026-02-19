@@ -2,11 +2,11 @@
 
 const {
   SlashCommandBuilder,
-  AttachmentBuilder,
   EmbedBuilder,
 } = require('discord.js');
-const { generateQuoteImage, VALID_THEMES, VALID_FONTS } = require('../utils/quoteGenerator');
+const { VALID_THEMES, VALID_FONTS } = require('../utils/quoteGenerator');
 const { getUserSettings } = require('../utils/store');
+const { buildQuoteReply, redirectQuote } = require('../utils/quoteHelpers');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -46,7 +46,7 @@ module.exports = {
     await interaction.deferReply();
 
     const messageId = interaction.options.getString('message_id');
-    const channel = interaction.channel;
+    const channel   = interaction.channel;
 
     let targetMessage;
     try {
@@ -55,7 +55,7 @@ module.exports = {
       return interaction.editReply({
         embeds: [new EmbedBuilder()
           .setColor('#ED4245')
-          .setDescription('❌ Could not find that message in this channel. Make sure you copy the ID from a message in this channel.')],
+          .setDescription('❌ Could not find that message in this channel. Make sure you copy the ID from a message **in this channel**.')],
       });
     }
 
@@ -69,36 +69,45 @@ module.exports = {
 
     const settings = getUserSettings(interaction.user.id, interaction.guildId);
 
-    const theme = interaction.options.getString('theme') || settings.theme;
+    const theme       = interaction.options.getString('theme')        || settings.theme;
     const accentColor = interaction.options.getString('accent_color') || settings.accentColor;
-    const font = interaction.options.getString('font') || settings.font;
-    const showAvatar = interaction.options.getBoolean('show_avatar') ?? settings.showAvatar;
+    const font        = interaction.options.getString('font')         || settings.font;
+    const showAvatar  = interaction.options.getBoolean('show_avatar')    ?? settings.showAvatar;
     const showTimestamp = interaction.options.getBoolean('show_timestamp') ?? settings.showTimestamp;
-    const showServer = interaction.options.getBoolean('show_server') ?? settings.showServer;
+    const showServer  = interaction.options.getBoolean('show_server')    ?? settings.showServer;
 
-    const author = targetMessage.author;
-    const member = await interaction.guild?.members.fetch(author.id).catch(() => null);
+    const author      = targetMessage.author;
+    const member      = await interaction.guild?.members.fetch(author.id).catch(() => null);
     const displayName = member?.displayName || author.globalName || author.username;
-    const avatarUrl = author.displayAvatarURL({ extension: 'png', size: 128 });
+    const avatarUrl   = author.displayAvatarURL({ extension: 'png', size: 128 });
 
     try {
-      const buffer = await generateQuoteImage({
-        text: targetMessage.content,
-        authorName: displayName,
-        avatarUrl: showAvatar ? avatarUrl : null,
+      const { attachment, components, buffer } = await buildQuoteReply({
+        text:        targetMessage.content,
+        authorName:  displayName,
+        avatarUrl,
         theme,
         accentColor,
         font,
+        showAvatar,
         showTimestamp,
         showServer,
-        serverName: interaction.guild?.name || null,
-        channelName: channel.name || null,
-        timestamp: targetMessage.createdAt.toISOString(),
-        quotedBy: interaction.user.globalName || interaction.user.username,
+        serverName:  interaction.guild?.name  || null,
+        channelName: channel.name             || null,
+        channelId:   channel.id,
+        timestamp:   targetMessage.createdAt.toISOString(),
+        quotedBy:    interaction.user.globalName || interaction.user.username,
+        invokerUserId: interaction.user.id,
+        guildId:     interaction.guildId,
       });
 
-      const attachment = new AttachmentBuilder(buffer, { name: 'quote.png' });
-      return interaction.editReply({ files: [attachment] });
+      await interaction.editReply({ files: [attachment], components });
+
+      // Forward to redirect channel if configured
+      await redirectQuote(interaction.guild, buffer, {
+        quotedBy:  interaction.user.globalName || interaction.user.username,
+        channelId: channel.id,
+      });
     } catch (err) {
       console.error('[/quote] Image generation error:', err);
       return interaction.editReply({

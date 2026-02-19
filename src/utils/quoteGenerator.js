@@ -3,9 +3,10 @@
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 
 // ─── Canvas dimensions ───────────────────────────────────────────────────────
-const WIDTH = 1200;
-const HEIGHT = 630;
-const PADDING = 60;
+const WIDTH       = 1200;
+const HEIGHT      = 630;
+const PADDING     = 60;
+const CARD_MARGIN = 10; // inset from PADDING for the decorative card background
 const AVATAR_SIZE = 80;
 
 // ─── Theme definitions ────────────────────────────────────────────────────────
@@ -245,7 +246,10 @@ async function generateQuoteImage(opts) {
 
   // ── Decorative card ────────────────────────────────────────────────────────
   ctx.save();
-  roundRect(ctx, PADDING - 10, PADDING - 10, WIDTH - (PADDING - 10) * 2, HEIGHT - (PADDING - 10) * 2, 20);
+  const cardX = PADDING - CARD_MARGIN;
+  const cardW = WIDTH  - cardX * 2;
+  const cardH = HEIGHT - cardX * 2;
+  roundRect(ctx, cardX, cardX, cardW, cardH, 20);
   ctx.fillStyle = t.secondBackground + 'cc'; // slight transparency
   ctx.fill();
   ctx.restore();
