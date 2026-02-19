@@ -18,19 +18,19 @@ const {
 } = require('discord.js');
 
 const {
+  getUserSettings,
+  getGuildSettings,
+  setUserSettings,
+  setGuildSettings,
+} = require('../utils/store');
+
+const {
   getSession,
   updateSession,
   buildQuoteComponents,
   renderFromSession,
   redirectQuote,
 } = require('../utils/quoteHelpers');
-
-const {
-  getUserSettings,
-  getGuildSettings,
-  setUserSettings,
-  setGuildSettings,
-} = require('../utils/store');
 
 const {
   buildSettingsPanel,
@@ -52,7 +52,7 @@ function errorEmbed(msg) {
 // ─── Quote button / select handlers ──────────────────────────────────────────
 
 /**
- * Handle a qt_* component interaction (theme select, font button, toggle button).
+ * Handle a qt_* component interaction (theme select, font button, save style).
  * Updates the session state and re-renders the quote image in-place.
  */
 async function handleQuoteComponent(interaction) {
@@ -74,6 +74,21 @@ async function handleQuoteComponent(interaction) {
     });
   }
 
+  // ── Save Style — persist theme + font + accentColor as user defaults ──────
+  if (action === 'qt_save') {
+    setUserSettings(session.invokerUserId, {
+      theme:       session.theme,
+      font:        session.font,
+      accentColor: session.accentColor,
+    });
+    return interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(session.accentColor || '#5865F2')
+        .setDescription('✅ Style saved! Future quotes will use this theme and font by default.')],
+      ephemeral: true,
+    });
+  }
+
   await interaction.deferUpdate();
 
   // Apply state change
@@ -82,12 +97,6 @@ async function handleQuoteComponent(interaction) {
     updateSession(sessionId, { theme: newTheme });
   } else if (action === 'qt_font') {
     updateSession(sessionId, { font: extra });
-  } else if (action === 'qt_tog') {
-    const field = { av: 'showAvatar', ts: 'showTimestamp', sv: 'showServer' }[extra];
-    if (field) {
-      const updated = !getSession(sessionId)[field];
-      updateSession(sessionId, { [field]: updated });
-    }
   }
 
   const updated = getSession(sessionId);
@@ -250,7 +259,7 @@ module.exports = {
         (interaction.isStringSelectMenu() || interaction.isButton()) &&
         (interaction.customId.startsWith('qt_theme:') ||
          interaction.customId.startsWith('qt_font:')  ||
-         interaction.customId.startsWith('qt_tog:'))
+         interaction.customId.startsWith('qt_save:'))
       ) {
         await handleQuoteComponent(interaction);
         return;
