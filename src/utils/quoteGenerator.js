@@ -173,7 +173,7 @@ async function generateQuoteImage(opts) {
   const t          = THEMES[VALID_THEMES.includes(theme) ? theme : 'dark'];
   const accent     = safeColor(rawAccent, t.accentDefault);
   const fontFamily = VALID_FONTS.includes(font) ? font : 'serif';
-  const [br, bg, bb] = hexToRgb(t.background);
+  const [bgRed, bgGreen, bgBlue] = hexToRgb(t.background);
 
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx    = canvas.getContext('2d');
@@ -225,8 +225,8 @@ async function generateQuoteImage(opts) {
     if (portraitDrawn) {
       // Horizontal fade: avatar → theme background (left side still shows through)
       const fadeGrad = ctx.createLinearGradient(FADE_FROM_X, 0, FADE_TO_X, 0);
-      fadeGrad.addColorStop(0, `rgba(${br},${bg},${bb},0)`);
-      fadeGrad.addColorStop(1, `rgba(${br},${bg},${bb},1)`);
+      fadeGrad.addColorStop(0, `rgba(${bgRed},${bgGreen},${bgBlue},0)`);
+      fadeGrad.addColorStop(1, `rgba(${bgRed},${bgGreen},${bgBlue},1)`);
       ctx.fillStyle = fadeGrad;
       ctx.fillRect(0, 0, FADE_TO_X, HEIGHT);
 
@@ -239,31 +239,39 @@ async function generateQuoteImage(opts) {
   // ── 3. Determine text area bounds ──────────────────────────────────────────
   const txLeft = hasPortrait ? TEXT_X     : TEXT_X_FULL;
   const txMaxW = hasPortrait ? TEXT_MAX_W : TEXT_MAX_W_FULL;
-  // Reserve bottom space for author block + "Quoted by" line
-  const authorBlockH   = 100; // px reserved at bottom for attribution
-  const textAreaHeight = HEIGHT - authorBlockH - 60; // ≈ 470 px
+
+  // Spacing between the last quote line and the thin accent rule above the author
+  const AUTHOR_GAP  = 28;
+  // Height of the author block (rule 2px + 12px gap + 34px name + 6px + 22px sub-line)
+  const AUTHOR_BLOCK_H = 76;
+  // Vertical margins: 50px min from top; 55px kept clear at bottom for "Quoted by" + accent line
+  const TOP_MIN    = 50;
+  const BOTTOM_RSV = 55;
+  const AVAIL_H    = HEIGHT - TOP_MIN - BOTTOM_RSV; // 525 px
 
   // ── 4. Quote text ──────────────────────────────────────────────────────────
-  // Dynamically shrink font to fit
+  // Shrink font until the combined block (text + gap + author) fits in AVAIL_H
   let fontSize = 48;
   let lines    = [];
   while (fontSize >= 20) {
     ctx.font = `italic ${fontSize}px ${fontFamily}`;
     lines = wrapText(ctx, text, txMaxW);
-    if (lines.length * fontSize * 1.4 <= textAreaHeight - 50) break;
+    const totalH = lines.length * fontSize * 1.4 + AUTHOR_GAP + AUTHOR_BLOCK_H;
+    if (totalH <= AVAIL_H) break;
     fontSize -= 2;
   }
 
   const lineHeight  = fontSize * 1.4;
   const textBlockH  = lines.length * lineHeight;
-  // Vertically centre the text block within the available area above author block
-  const textStartY  = Math.max(50, (textAreaHeight - textBlockH) / 2);
+  // Vertically centre the combined content block (text + author) in the canvas
+  const totalBlockH = textBlockH + AUTHOR_GAP + AUTHOR_BLOCK_H;
+  const textStartY  = Math.max(TOP_MIN, Math.round((HEIGHT - totalBlockH) / 2));
 
   // Decorative opening quote-mark (accent tinted, semi-transparent)
-  const [ar, ag, ab] = hexToRgb(accent);
+  const [accentRed, accentGreen, accentBlue] = hexToRgb(accent);
   ctx.save();
   ctx.font        = `bold ${Math.min(Math.round(fontSize * 2.2), 110)}px ${fontFamily}`;
-  ctx.fillStyle   = `rgba(${ar},${ag},${ab},0.28)`;
+  ctx.fillStyle   = `rgba(${accentRed},${accentGreen},${accentBlue},0.28)`;
   ctx.textBaseline = 'top';
   ctx.textAlign   = 'left';
   ctx.fillText('\u201C', txLeft, Math.max(8, textStartY - fontSize * 1.1));
@@ -278,13 +286,14 @@ async function generateQuoteImage(opts) {
     ctx.fillText(line, txLeft, textStartY + i * lineHeight);
   });
 
-  // ── 5. Author attribution ──────────────────────────────────────────────────
-  // Sits AUTHOR_Y from the top, below the quote text but above "Quoted by"
-  const authorY = HEIGHT - authorBlockH;
+  // ── 5. Author attribution — directly below the last quote line ─────────────
+  // Rule sits AUTHOR_GAP px below the text block
+  const ruleY   = textStartY + textBlockH + AUTHOR_GAP;
+  const authorY = ruleY + 2 + 12; // 2px rule height + 12px breathing room
 
   // Thin accent rule
   ctx.fillStyle = accent;
-  ctx.fillRect(txLeft, authorY - 14, txMaxW * 0.35, 2);
+  ctx.fillRect(txLeft, ruleY, txMaxW * 0.35, 2);
 
   // "— Author Name"
   ctx.font        = `bold 27px ${fontFamily}`;
