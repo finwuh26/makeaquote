@@ -43,8 +43,7 @@ module.exports = {
     const author      = targetMessage.author;
     const member      = await message.guild?.members.fetch(author.id).catch(() => null);
     const displayName = member?.displayName || author.globalName || author.username;
-    const avatarUrl   = author.displayAvatarURL({ extension: 'png', size: 128 });
-
+    const avatarUrl   = author.displayAvatarURL({ extension: 'png', size: 512 });
     // Show a typing indicator while the image is generated
     await message.channel.sendTyping().catch(() => {});
 

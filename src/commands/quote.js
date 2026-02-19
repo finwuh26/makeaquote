@@ -79,7 +79,7 @@ module.exports = {
     const author      = targetMessage.author;
     const member      = await interaction.guild?.members.fetch(author.id).catch(() => null);
     const displayName = member?.displayName || author.globalName || author.username;
-    const avatarUrl   = author.displayAvatarURL({ extension: 'png', size: 128 });
+    const avatarUrl   = author.displayAvatarURL({ extension: 'png', size: 512 });
 
     try {
       const { attachment, components, buffer } = await buildQuoteReply({

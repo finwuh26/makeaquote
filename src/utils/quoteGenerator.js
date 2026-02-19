@@ -1,101 +1,111 @@
 'use strict';
 
-const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
 // ─── Canvas dimensions ───────────────────────────────────────────────────────
-const WIDTH       = 1200;
-const HEIGHT      = 630;
-const PADDING     = 60;
-const CARD_MARGIN = 10; // inset from PADDING for the decorative card background
-const AVATAR_SIZE = 80;
+const WIDTH  = 1200;
+const HEIGHT = 630;
+
+// ─── Portrait panel constants ────────────────────────────────────────────────
+// The quoted author's avatar fills the left PORTRAIT_W pixels (B&W, cover-fit).
+// A horizontal gradient then fades from transparent → solid background colour,
+// starting at FADE_FROM_X and completing at FADE_TO_X, giving the cinematic
+// "photo fading into darkness" look.  All quote text lives in the right zone.
+const PORTRAIT_W  = 440;   // width of the left avatar panel
+const FADE_FROM_X = 200;   // gradient starts here (avatar still fully visible)
+const FADE_TO_X   = 500;   // gradient fully opaque from here rightward
+const TEXT_X      = 530;   // left edge of quote-text column
+const TEXT_RIGHT  = 1150;  // right edge of quote-text column
+const TEXT_MAX_W  = TEXT_RIGHT - TEXT_X;   // 620 px
+
+// Without a portrait the full canvas width is used for text.
+const TEXT_X_FULL      = 80;
+const TEXT_MAX_W_FULL  = WIDTH - TEXT_X_FULL * 2;  // 1040 px
 
 // ─── Theme definitions ────────────────────────────────────────────────────────
 const THEMES = {
   dark: {
-    background: '#1a1a2e',
-    secondBackground: '#16213e',
-    textColor: '#eaeaea',
-    quoteColor: '#ffffff',
-    accentDefault: '#5865F2',
-    mutedColor: '#aaaaaa',
-    quoteMarkColor: 'rgba(255,255,255,0.08)',
-    gradientStart: '#1a1a2e',
-    gradientEnd: '#0f3460',
+    background:   '#111118',
+    textColor:    '#eaeaea',
+    quoteColor:   '#ffffff',
+    accentDefault:'#5865F2',
+    mutedColor:   '#888899',
   },
   light: {
-    background: '#f5f5f5',
-    secondBackground: '#ffffff',
-    textColor: '#333333',
-    quoteColor: '#111111',
-    accentDefault: '#5865F2',
-    mutedColor: '#777777',
-    quoteMarkColor: 'rgba(0,0,0,0.06)',
-    gradientStart: '#e8eaf6',
-    gradientEnd: '#c5cae9',
+    background:   '#f0f0f5',
+    textColor:    '#222233',
+    quoteColor:   '#111122',
+    accentDefault:'#5865F2',
+    mutedColor:   '#667788',
   },
   midnight: {
-    background: '#0d0d0d',
-    secondBackground: '#1a1a1a',
-    textColor: '#cccccc',
-    quoteColor: '#ffffff',
-    accentDefault: '#7289DA',
-    mutedColor: '#888888',
-    quoteMarkColor: 'rgba(255,255,255,0.05)',
-    gradientStart: '#0d0d0d',
-    gradientEnd: '#1a1a1a',
+    background:   '#080808',
+    textColor:    '#cccccc',
+    quoteColor:   '#ffffff',
+    accentDefault:'#7289DA',
+    mutedColor:   '#666677',
   },
   ocean: {
-    background: '#0a192f',
-    secondBackground: '#112240',
-    textColor: '#ccd6f6',
-    quoteColor: '#e6f1ff',
-    accentDefault: '#64ffda',
-    mutedColor: '#8892b0',
-    quoteMarkColor: 'rgba(100,255,218,0.08)',
-    gradientStart: '#0a192f',
-    gradientEnd: '#020c1b',
+    background:   '#050e1f',
+    textColor:    '#ccd6f6',
+    quoteColor:   '#e6f1ff',
+    accentDefault:'#64ffda',
+    mutedColor:   '#6677aa',
   },
   sunset: {
-    background: '#2d1b33',
-    secondBackground: '#3d2244',
-    textColor: '#f0c0d0',
-    quoteColor: '#ffffff',
-    accentDefault: '#ff7eb3',
-    mutedColor: '#c090a0',
-    quoteMarkColor: 'rgba(255,126,179,0.10)',
-    gradientStart: '#2d1b33',
-    gradientEnd: '#1a0a20',
+    background:   '#1a0a20',
+    textColor:    '#f0c0d0',
+    quoteColor:   '#ffffff',
+    accentDefault:'#ff7eb3',
+    mutedColor:   '#aa6677',
   },
   forest: {
-    background: '#1a2f1a',
-    secondBackground: '#223322',
-    textColor: '#d4e8c4',
-    quoteColor: '#f0ffe0',
-    accentDefault: '#4caf50',
-    mutedColor: '#88aa88',
-    quoteMarkColor: 'rgba(76,175,80,0.10)',
-    gradientStart: '#1a2f1a',
-    gradientEnd: '#0d1a0d',
+    background:   '#0a180a',
+    textColor:    '#d4e8c4',
+    quoteColor:   '#f0ffe0',
+    accentDefault:'#4caf50',
+    mutedColor:   '#557755',
   },
 };
 
 const VALID_THEMES = Object.keys(THEMES);
-const VALID_FONTS = ['serif', 'sans-serif', 'monospace'];
+const VALID_FONTS  = ['serif', 'sans-serif', 'monospace'];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Wrap text to fit within maxWidth, returning an array of lines.
- * @param {CanvasRenderingContext2D} ctx
- * @param {string} text
- * @param {number} maxWidth
+ * Parse a 6-digit hex colour string into [r, g, b] integers.
+ * Falls back to [0, 0, 0] on invalid input.
+ */
+function hexToRgb(hex) {
+  const clean = (hex || '').replace('#', '');
+  if (clean.length !== 6) return [0, 0, 0];
+  return [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16),
+  ];
+}
+
+/**
+ * Return a validated hex colour, or the fallback if the input is invalid.
+ */
+function safeColor(color, fallback) {
+  if (!color) return fallback;
+  const clean = color.trim();
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(clean) ? clean : fallback;
+}
+
+/**
+ * Word-wrap `text` to fit within `maxWidth` pixels using the current canvas
+ * font, honouring embedded newline characters.
  * @returns {string[]}
  */
 function wrapText(ctx, text, maxWidth) {
   const words = text.split(' ');
   const lines = [];
   let current = '';
-
   for (const word of words) {
-    // Handle explicit newlines in the source text
     const parts = word.split('\n');
     for (let i = 0; i < parts.length; i++) {
       const candidate = current ? `${current} ${parts[i]}` : parts[i];
@@ -115,206 +125,182 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-/**
- * Draw a rounded rectangle path.
- * @param {CanvasRenderingContext2D} ctx
- */
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
+// ─── Main generator ───────────────────────────────────────────────────────────
 
 /**
- * Draw a circular avatar from a URL.  Falls back to a coloured initial if the
- * image cannot be fetched.
- * @param {CanvasRenderingContext2D} ctx
- * @param {string|null} avatarUrl
- * @param {string} fallbackInitial
- * @param {string} accentColor
- * @param {number} x
- * @param {number} y
- * @param {number} size
- */
-async function drawAvatar(ctx, avatarUrl, fallbackInitial, accentColor, x, y, size) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.clip();
-
-  if (avatarUrl) {
-    try {
-      const img = await loadImage(avatarUrl);
-      ctx.drawImage(img, x, y, size, size);
-    } catch {
-      drawInitialFallback(ctx, fallbackInitial, accentColor, x, y, size);
-    }
-  } else {
-    drawInitialFallback(ctx, fallbackInitial, accentColor, x, y, size);
-  }
-
-  ctx.restore();
-
-  // Avatar border ring
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawInitialFallback(ctx, initial, accentColor, x, y, size) {
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(x, y, size, size);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${size * 0.45}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText((initial || '?').toUpperCase().charAt(0), x + size / 2, y + size / 2);
-}
-
-/**
- * Parse a hex color or return a fallback.
- * @param {string} color
- * @param {string} fallback
- * @returns {string}
- */
-function safeColor(color, fallback) {
-  if (!color) return fallback;
-  const clean = color.trim();
-  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(clean) ? clean : fallback;
-}
-
-/**
- * Generate a quote image and return a PNG Buffer.
+ * Generate a cinematic quote image and return a PNG Buffer.
  *
- * @param {Object} opts
- * @param {string}  opts.text         - The quote body
- * @param {string}  opts.authorName   - Display name of the author
- * @param {string|null} opts.avatarUrl - Avatar URL (may be null)
- * @param {string}  opts.theme        - One of VALID_THEMES
- * @param {string}  opts.accentColor  - Hex accent colour
- * @param {string}  opts.font         - One of VALID_FONTS
- * @param {boolean} opts.showTimestamp
- * @param {boolean} opts.showServer
- * @param {string|null} opts.serverName
- * @param {string|null} opts.channelName
- * @param {string|null} opts.timestamp - ISO timestamp string
- * @param {string|null} opts.quotedBy  - Name of the person who created the quote
+ * Layout (with portrait):
+ *   Left  – B&W author avatar (cover-fit), fades right into dark background
+ *   Right – quote text (large italic), author attribution, "Quoted by" corner
+ *
+ * Layout (without portrait / showAvatar = false):
+ *   Full-width background with centred quote text and attribution
+ *
+ * @param {Object}      opts
+ * @param {string}      opts.text
+ * @param {string}      opts.authorName
+ * @param {string|null} opts.avatarUrl
+ * @param {boolean}     [opts.showAvatar=true]
+ * @param {string}      [opts.theme='dark']
+ * @param {string}      [opts.accentColor]
+ * @param {string}      [opts.font='serif']
+ * @param {boolean}     [opts.showTimestamp=true]
+ * @param {boolean}     [opts.showServer=true]
+ * @param {string|null} [opts.serverName]
+ * @param {string|null} [opts.channelName]
+ * @param {string|null} [opts.timestamp]
+ * @param {string|null} [opts.quotedBy]
  * @returns {Promise<Buffer>}
  */
 async function generateQuoteImage(opts) {
   const {
     text,
     authorName,
-    avatarUrl = null,
-    theme = 'dark',
-    accentColor: rawAccent,
-    font = 'serif',
-    showTimestamp = true,
-    showServer = true,
-    serverName = null,
-    channelName = null,
-    timestamp = null,
-    quotedBy = null,
+    avatarUrl      = null,
+    showAvatar     = true,
+    theme          = 'dark',
+    accentColor:   rawAccent,
+    font           = 'serif',
+    showTimestamp  = true,
+    showServer     = true,
+    serverName     = null,
+    channelName    = null,
+    timestamp      = null,
+    quotedBy       = null,
   } = opts;
 
-  const t = THEMES[VALID_THEMES.includes(theme) ? theme : 'dark'];
-  const accent = safeColor(rawAccent, t.accentDefault);
+  const t          = THEMES[VALID_THEMES.includes(theme) ? theme : 'dark'];
+  const accent     = safeColor(rawAccent, t.accentDefault);
   const fontFamily = VALID_FONTS.includes(font) ? font : 'serif';
+  const [br, bg, bb] = hexToRgb(t.background);
 
   const canvas = createCanvas(WIDTH, HEIGHT);
-  const ctx = canvas.getContext('2d');
+  const ctx    = canvas.getContext('2d');
 
-  // ── Background gradient ────────────────────────────────────────────────────
-  const grad = ctx.createLinearGradient(0, 0, WIDTH, HEIGHT);
-  grad.addColorStop(0, t.gradientStart);
-  grad.addColorStop(1, t.gradientEnd);
-  ctx.fillStyle = grad;
+  // ── 1. Solid background ────────────────────────────────────────────────────
+  ctx.fillStyle = t.background;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  // ── Decorative card ────────────────────────────────────────────────────────
-  ctx.save();
-  const cardX = PADDING - CARD_MARGIN;
-  const cardW = WIDTH  - cardX * 2;
-  const cardH = HEIGHT - cardX * 2;
-  roundRect(ctx, cardX, cardX, cardW, cardH, 20);
-  ctx.fillStyle = t.secondBackground + 'cc'; // slight transparency
-  ctx.fill();
-  ctx.restore();
+  // ── 2. B&W portrait panel (left side) ─────────────────────────────────────
+  const hasPortrait = showAvatar && !!avatarUrl;
 
-  // ── Accent left bar ────────────────────────────────────────────────────────
-  ctx.fillStyle = accent;
-  ctx.fillRect(PADDING, PADDING, 5, HEIGHT - PADDING * 2);
+  if (hasPortrait) {
+    let portraitDrawn = false;
 
-  // ── Giant decorative quotation mark ───────────────────────────────────────
-  ctx.save();
-  ctx.font = `bold 280px ${fontFamily}`;
-  ctx.fillStyle = t.quoteMarkColor;
-  ctx.textBaseline = 'top';
-  ctx.fillText('\u201C', PADDING + 20, PADDING - 40);
-  ctx.restore();
+    try {
+      const img = await loadImage(avatarUrl);
 
-  // ── Quote text ─────────────────────────────────────────────────────────────
-  const textAreaLeft = PADDING + 30;
-  const textAreaRight = WIDTH - PADDING - 20;
-  const textAreaWidth = textAreaRight - textAreaLeft;
+      // Cover-fit: fill PORTRAIT_W × HEIGHT, crop the source to the same ratio
+      const iAspect = img.width / img.height;
+      const pAspect = PORTRAIT_W / HEIGHT;
+      let sx, sy, sw, sh;
+      if (iAspect > pAspect) {
+        // Image is wider → crop left and right
+        sh = img.height;
+        sw = sh * pAspect;
+        sx = (img.width - sw) / 2;
+        sy = 0;
+      } else {
+        // Image is taller → crop top and bottom, keep face centred
+        sw = img.width;
+        sh = sw / pAspect;
+        sx = 0;
+        sy = (img.height - sh) / 3; // bias toward top-third for face framing
+      }
 
-  // Dynamic font sizing: start large and shrink to fit
-  let fontSize = 52;
-  let lines = [];
-  while (fontSize >= 22) {
+      // Render avatar in greyscale onto an offscreen canvas, then blit
+      const off    = createCanvas(PORTRAIT_W, HEIGHT);
+      const offCtx = off.getContext('2d');
+      offCtx.filter = 'grayscale(1)';
+      offCtx.drawImage(img, sx, sy, sw, sh, 0, 0, PORTRAIT_W, HEIGHT);
+      offCtx.filter = 'none';
+
+      ctx.drawImage(off, 0, 0);
+      portraitDrawn = true;
+    } catch {
+      // Avatar could not be fetched – fall through to portrait-less layout
+    }
+
+    if (portraitDrawn) {
+      // Horizontal fade: avatar → theme background (left side still shows through)
+      const fadeGrad = ctx.createLinearGradient(FADE_FROM_X, 0, FADE_TO_X, 0);
+      fadeGrad.addColorStop(0, `rgba(${br},${bg},${bb},0)`);
+      fadeGrad.addColorStop(1, `rgba(${br},${bg},${bb},1)`);
+      ctx.fillStyle = fadeGrad;
+      ctx.fillRect(0, 0, FADE_TO_X, HEIGHT);
+
+      // Ensure the text area is a clean solid background
+      ctx.fillStyle = t.background;
+      ctx.fillRect(FADE_TO_X, 0, WIDTH - FADE_TO_X, HEIGHT);
+    }
+  }
+
+  // ── 3. Determine text area bounds ──────────────────────────────────────────
+  const txLeft = hasPortrait ? TEXT_X     : TEXT_X_FULL;
+  const txMaxW = hasPortrait ? TEXT_MAX_W : TEXT_MAX_W_FULL;
+  // Reserve bottom space for author block + "Quoted by" line
+  const authorBlockH   = 100; // px reserved at bottom for attribution
+  const textAreaHeight = HEIGHT - authorBlockH - 60; // ≈ 470 px
+
+  // ── 4. Quote text ──────────────────────────────────────────────────────────
+  // Dynamically shrink font to fit
+  let fontSize = 48;
+  let lines    = [];
+  while (fontSize >= 20) {
     ctx.font = `italic ${fontSize}px ${fontFamily}`;
-    lines = wrapText(ctx, `\u201C${text}\u201D`, textAreaWidth);
-    const totalHeight = lines.length * (fontSize * 1.35);
-    if (totalHeight <= HEIGHT - PADDING * 2 - 180) break;
+    lines = wrapText(ctx, text, txMaxW);
+    if (lines.length * fontSize * 1.4 <= textAreaHeight - 50) break;
     fontSize -= 2;
   }
 
-  const lineHeight = fontSize * 1.35;
-  const textBlockHeight = lines.length * lineHeight;
+  const lineHeight  = fontSize * 1.4;
+  const textBlockH  = lines.length * lineHeight;
+  // Vertically centre the text block within the available area above author block
+  const textStartY  = Math.max(50, (textAreaHeight - textBlockH) / 2);
 
-  // Vertically centre the quote text in the upper portion of the card
-  const textStartY = (HEIGHT - 160) / 2 - textBlockHeight / 2 + PADDING / 2;
-
-  ctx.font = `italic ${fontSize}px ${fontFamily}`;
-  ctx.fillStyle = t.quoteColor;
+  // Decorative opening quote-mark (accent tinted, semi-transparent)
+  const [ar, ag, ab] = hexToRgb(accent);
+  ctx.save();
+  ctx.font        = `bold ${Math.min(Math.round(fontSize * 2.2), 110)}px ${fontFamily}`;
+  ctx.fillStyle   = `rgba(${ar},${ag},${ab},0.28)`;
   ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
+  ctx.textAlign   = 'left';
+  ctx.fillText('\u201C', txLeft, Math.max(8, textStartY - fontSize * 1.1));
+  ctx.restore();
 
+  // Quote body
+  ctx.font        = `italic ${fontSize}px ${fontFamily}`;
+  ctx.fillStyle   = t.quoteColor;
+  ctx.textBaseline = 'top';
+  ctx.textAlign   = 'left';
   lines.forEach((line, i) => {
-    ctx.fillText(line, textAreaLeft, textStartY + i * lineHeight);
+    ctx.fillText(line, txLeft, textStartY + i * lineHeight);
   });
 
-  // ── Author row ─────────────────────────────────────────────────────────────
-  const authorY = HEIGHT - PADDING - AVATAR_SIZE;
-  await drawAvatar(ctx, avatarUrl, authorName, accent, PADDING + 20, authorY, AVATAR_SIZE);
+  // ── 5. Author attribution ──────────────────────────────────────────────────
+  // Sits AUTHOR_Y from the top, below the quote text but above "Quoted by"
+  const authorY = HEIGHT - authorBlockH;
 
-  const authorTextX = PADDING + 20 + AVATAR_SIZE + 18;
+  // Thin accent rule
+  ctx.fillStyle = accent;
+  ctx.fillRect(txLeft, authorY - 14, txMaxW * 0.35, 2);
 
-  ctx.fillStyle = t.textColor;
-  ctx.font = `bold 26px ${fontFamily}`;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.fillText(`— ${authorName}`, authorTextX, authorY + AVATAR_SIZE * 0.38);
+  // "— Author Name"
+  ctx.font        = `bold 27px ${fontFamily}`;
+  ctx.fillStyle   = t.textColor;
+  ctx.textBaseline = 'top';
+  ctx.textAlign   = 'left';
+  ctx.fillText(`\u2014 ${authorName}`, txLeft, authorY);
 
-  // Muted sub-line: server / channel / timestamp
+  // Muted sub-line (server · channel · timestamp)
   const subParts = [];
-  if (showServer && serverName) subParts.push(`${serverName}${channelName ? ` #${channelName}` : ''}`);
+  if (showServer && serverName) {
+    subParts.push(`${serverName}${channelName ? ` #${channelName}` : ''}`);
+  }
   if (showTimestamp && timestamp) {
     const d = new Date(timestamp);
-    if (!isNaN(d)) {
+    if (!isNaN(d.getTime())) {
       subParts.push(d.toLocaleString('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
@@ -322,33 +308,27 @@ async function generateQuoteImage(opts) {
     }
   }
   if (subParts.length) {
+    ctx.font      = `17px ${fontFamily}`;
     ctx.fillStyle = t.mutedColor;
-    ctx.font = `18px ${fontFamily}`;
-    ctx.fillText(subParts.join(' · '), authorTextX, authorY + AVATAR_SIZE * 0.72);
+    ctx.fillText(subParts.join(' \u00B7 '), txLeft, authorY + 36);
   }
 
-  // ── "Quoted by" badge ──────────────────────────────────────────────────────
+  // ── 6. "Quoted by" — bottom-right corner ──────────────────────────────────
   if (quotedBy) {
-    const badge = `Quoted by ${quotedBy}`;
-    ctx.font = `15px ${fontFamily}`;
-    const bw = ctx.measureText(badge).width + 20;
-    const bh = 26;
-    const bx = WIDTH - PADDING - bw - 10;
-    const by = HEIGHT - PADDING - bh - 5;
-    roundRect(ctx, bx, by, bw, bh, 6);
-    ctx.fillStyle = accent + '33';
-    ctx.fill();
-    ctx.fillStyle = accent;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'center';
-    ctx.fillText(badge, bx + bw / 2, by + bh / 2);
+    const label = `Quoted by ${quotedBy}`;
+    ctx.font        = `15px ${fontFamily}`;
+    ctx.fillStyle   = t.mutedColor;
+    ctx.textBaseline = 'bottom';
+    ctx.textAlign   = 'right';
+    ctx.fillText(label, TEXT_RIGHT, HEIGHT - 16);
   }
 
-  // ── Thin accent bottom border ──────────────────────────────────────────────
+  // ── 7. Thin accent line at very bottom of text area ───────────────────────
   ctx.fillStyle = accent;
-  ctx.fillRect(PADDING, HEIGHT - PADDING - 3, WIDTH - PADDING * 2, 3);
+  ctx.fillRect(txLeft, HEIGHT - 6, txMaxW, 3);
 
   return canvas.toBuffer('image/png');
 }
 
 module.exports = { generateQuoteImage, VALID_THEMES, VALID_FONTS };
+
